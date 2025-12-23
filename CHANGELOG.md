@@ -2,10 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.6] - 2025-12-23
+
+### Changed
+- Removed UIToolkit extension (not part of core API)
+- UIToolkit APIs now use reflection-based invocation for optional support
+
+### Fixed
+- Assembly reference error resolved by removing non-core dependency
+
 ## [1.0.5] - 2025-12-23
 
 ### Fixed
 - Added missing LocalMcp.UnityServer.UIToolkit.Editor.dll (assembly reference error fix)
+
+### Note
+- This version was superseded by 1.0.6 (UIToolkit is not part of core API)
 
 ## [1.0.4] - 2025-12-23
 

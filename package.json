@@ -1,6 +1,6 @@
 {
   "name": "com.dsgarage.unimcp4cc",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "displayName": "UniMCP4CC - Unity MCP Server for Claude Code",
   "description": "Model Context Protocol server for Unity Editor integration with Claude Code. Enables AI-powered Unity development through natural language commands.",
   "unity": "6000.0",
