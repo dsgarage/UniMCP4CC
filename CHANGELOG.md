@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.7] - 2026-03-05
+
+### Added
+- ParticleSystem API（57 APIs — 全24モジュール対応）
+- VersionCompatibility パッケージ互換性チェック API
+- Edition管理: `.mcp-edition` ファイルによる公開範囲制御
+- GitHub Actions: edition-guard.yml（Edition自動チェック）
+
+### Changed
+- Recorder GetStatus に recorderVersion / isRecorder5 フィールド追加
+- mcp-bridge マルチプロジェクト検出改善
+- コア DLL 更新（916KB → 1.3MB）
+
+### Fixed
+- ParticleSystem API をリフレクションベース呼び出しに修正（コアDLL依存解消）
+
 ## [1.0.6] - 2025-12-23
 
 ### Changed

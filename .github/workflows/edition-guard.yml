@@ -1,0 +1,104 @@
+name: Edition Guard
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'Editor/**'
+      - 'package.json'
+      - '.github/workflows/edition-guard.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'Editor/**'
+      - 'package.json'
+  workflow_dispatch:
+
+jobs:
+  edition-guard:
+    name: Verify Public Edition
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Check .mcp-edition file exists
+        run: |
+          EDITION_FILE="Editor/.mcp-edition"
+
+          if [ ! -f "$EDITION_FILE" ]; then
+            echo "::error::🚨 致命的: Editor/.mcp-edition ファイルが存在しません！"
+            echo ""
+            echo "このファイルがない場合、Edition検出がデフォルトの Pro（全機能解放）になり、"
+            echo "無料版ユーザーに有料機能が公開されてしまいます。"
+            echo ""
+            echo "修正方法:"
+            echo '  echo "public" > Editor/.mcp-edition'
+            echo ""
+            exit 1
+          fi
+
+          echo "✅ .mcp-edition ファイルが存在します"
+
+      - name: Verify edition is 'public'
+        run: |
+          EDITION_FILE="Editor/.mcp-edition"
+          CONTENT=$(cat "$EDITION_FILE" | tr -d '[:space:]')
+
+          if [ "$CONTENT" != "public" ]; then
+            echo "::error::🚨 致命的: .mcp-edition の内容が 'public' ではありません！"
+            echo "現在の内容: '$CONTENT'"
+            echo ""
+            echo "UniMCP4CC（無料版）は必ず 'public' でなければなりません。"
+            echo ""
+            echo "修正方法:"
+            echo '  echo "public" > Editor/.mcp-edition'
+            echo ""
+            exit 1
+          fi
+
+          echo "✅ Edition は 'public' です（正常）"
+
+      - name: Verify DLL exists
+        run: |
+          DLL_FILE="Editor/LocalMcp.UnityServer.Editor.dll"
+
+          if [ ! -f "$DLL_FILE" ]; then
+            echo "::error::Editor DLL が見つかりません: $DLL_FILE"
+            exit 1
+          fi
+
+          echo "✅ DLL が存在します"
+          ls -lh "$DLL_FILE"
+
+      - name: Check package.json version
+        run: |
+          if [ ! -f "package.json" ]; then
+            echo "::error::package.json が見つかりません"
+            exit 1
+          fi
+
+          VERSION=$(grep '"version"' package.json | head -1 | sed 's/.*"version":\s*"//' | sed 's/".*//')
+          echo "📦 パッケージバージョン: $VERSION"
+
+          # バージョン形式の検証（semver）
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+'; then
+            echo "::error::バージョン形式が不正です: $VERSION"
+            exit 1
+          fi
+
+          echo "✅ バージョン形式が正常です"
+
+      - name: Summary
+        run: |
+          echo "## 🔒 Edition Guard チェック結果" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| チェック項目 | 結果 |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------------|------|" >> $GITHUB_STEP_SUMMARY
+          echo "| .mcp-edition ファイル | ✅ 存在 |" >> $GITHUB_STEP_SUMMARY
+          echo "| Edition 内容 | ✅ public |" >> $GITHUB_STEP_SUMMARY
+          echo "| DLL | ✅ 存在 |" >> $GITHUB_STEP_SUMMARY
+
+          VERSION=$(grep '"version"' package.json | head -1 | sed 's/.*"version":\s*"//' | sed 's/".*//')
+          echo "| パッケージバージョン | ✅ $VERSION |" >> $GITHUB_STEP_SUMMARY
