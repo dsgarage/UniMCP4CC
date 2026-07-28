@@ -161,6 +161,18 @@ async function httpGet(url, timeout = 3000) {
   }
 }
 
+/**
+ * Calculate exponential backoff delay with cap.
+ * @param {number} attempt - Current attempt number (1-based)
+ * @param {number} maxDelay - Maximum delay in milliseconds (default: 30000)
+ * @returns {number} Delay in milliseconds
+ */
+function getBackoffDelay(attempt, maxDelay = 30000) {
+  // 1s, 2s, 4s, 8s, 16s, 30s, 30s, ...
+  const delay = Math.min(1000 * Math.pow(2, attempt - 1), maxDelay);
+  return delay;
+}
+
 class UnityMCPServer {
   constructor() {
     this.server = new Server(
@@ -296,22 +308,22 @@ Check Unity Console for error messages.`,
 
   setupHandlers() {
     this.server.setRequestHandler(ListToolsRequestSchema, async () => {
-      const maxRetries = 3;
-      const retryDelay = 2000; // 2 seconds
+      const maxRetries = 10;
 
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        const backoffMs = getBackoffDelay(attempt);
         try {
           // Check connection before making request
           if (!this.isUnityConnected) {
-            verboseLog(`[MCP Bridge] Unity not connected, attempting to connect... (attempt ${attempt}/${maxRetries})`);
+            log(`[MCP Bridge] Unity not connected, attempting to connect... (attempt ${attempt}/${maxRetries})`);
             const isConnected = await this.checkUnityHealth();
             if (!isConnected) {
               if (attempt < maxRetries) {
-                verboseLog(`[MCP Bridge] Connection failed, retrying in ${retryDelay}ms...`);
-                await new Promise(resolve => setTimeout(resolve, retryDelay));
+                log(`[MCP Bridge] Connection failed, retrying in ${backoffMs}ms...`);
+                await new Promise(resolve => setTimeout(resolve, backoffMs));
                 continue;
               }
-              verboseLog('[MCP Bridge] Failed to connect to Unity Editor after all retries');
+              log('[MCP Bridge] Failed to connect to Unity Editor after all retries');
               // Return empty tools list with warning
               return {
                 tools: [],
@@ -334,26 +346,29 @@ Check Unity Console for error messages.`,
 
           // Only return if we got actual tools
           if (tools.length > 0) {
+            if (attempt > 1) {
+              log(`[MCP Bridge] Successfully retrieved tools after ${attempt} attempts`);
+            }
             return { tools };
           }
 
           // Empty tools might indicate domain reload in progress
           if (attempt < maxRetries) {
-            verboseLog(`[MCP Bridge] Got empty tools list, may be domain reloading. Retrying in ${retryDelay}ms...`);
-            await new Promise(resolve => setTimeout(resolve, retryDelay));
+            log(`[MCP Bridge] Got empty tools list, may be domain reloading. Retrying in ${backoffMs}ms... (attempt ${attempt}/${maxRetries})`);
+            await new Promise(resolve => setTimeout(resolve, backoffMs));
             continue;
           }
 
           return { tools };
         } catch (error) {
-          verboseLog(`[MCP Bridge] Failed to list tools (attempt ${attempt}/${maxRetries}): ` + error.message);
+          log(`[MCP Bridge] Failed to list tools (attempt ${attempt}/${maxRetries}): ` + error.message);
 
           // Mark as disconnected
           this.isUnityConnected = false;
 
           if (attempt < maxRetries) {
-            verboseLog(`[MCP Bridge] Retrying in ${retryDelay}ms...`);
-            await new Promise(resolve => setTimeout(resolve, retryDelay));
+            log(`[MCP Bridge] Retrying in ${backoffMs}ms...`);
+            await new Promise(resolve => setTimeout(resolve, backoffMs));
             continue;
           }
 
@@ -371,62 +386,85 @@ Check Unity Console for error messages.`,
     });
 
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
-      try {
-        // Check connection before making request
-        if (!this.isUnityConnected) {
-          verboseLog('[MCP Bridge] Unity not connected, attempting to connect...');
-          const isConnected = await this.checkUnityHealth();
-          if (!isConnected) {
-            verboseLog('[MCP Bridge] Failed to connect to Unity Editor');
-            return this.getDisconnectedErrorMessage();
+      const maxRetries = 10;
+      const { name, arguments: args } = request.params;
+
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        const backoffMs = getBackoffDelay(attempt);
+        try {
+          // Check connection before making request
+          if (!this.isUnityConnected) {
+            log(`[MCP Bridge] Unity not connected, attempting to connect before tool call... (attempt ${attempt}/${maxRetries})`);
+            const isConnected = await this.checkUnityHealth();
+            if (!isConnected) {
+              if (attempt < maxRetries) {
+                log(`[MCP Bridge] Connection failed, retrying in ${backoffMs}ms...`);
+                await new Promise(resolve => setTimeout(resolve, backoffMs));
+                continue;
+              }
+              log('[MCP Bridge] Failed to connect to Unity Editor after all retries');
+              return this.getDisconnectedErrorMessage();
+            }
           }
-        }
 
-        const { name, arguments: args } = request.params;
-
-        const response = await httpPost(`${UNITY_HTTP_URL}/api/mcp`, {
-          jsonrpc: '2.0',
-          method: 'tools/call',
-          params: {
-            name,
-            arguments: args || {},
-          },
-          id: 2,
-        }, 30000);
-
-        const result = response.result || {};
-
-        return {
-          content: result.content || [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
+          const response = await httpPost(`${UNITY_HTTP_URL}/api/mcp`, {
+            jsonrpc: '2.0',
+            method: 'tools/call',
+            params: {
+              name,
+              arguments: args || {},
             },
-          ],
-        };
-      } catch (error) {
-        // Mark as disconnected on error
-        const wasConnected = this.isUnityConnected;
-        this.isUnityConnected = false;
+            id: 2,
+          }, 30000);
 
-        const errorMessage = error.message;
+          const result = response.result || {};
 
-        // If we just lost connection, provide detailed error
-        if (wasConnected) {
-          log('[MCP Bridge] Connection lost during API call: ' + errorMessage);
-          return this.getDisconnectedErrorMessage();
+          if (attempt > 1) {
+            log(`[MCP Bridge] Tool call '${name}' succeeded after ${attempt} attempts`);
+          }
+
+          return {
+            content: result.content || [
+              {
+                type: 'text',
+                text: JSON.stringify(result, null, 2),
+              },
+            ],
+          };
+        } catch (error) {
+          // Mark as disconnected on error
+          const wasConnected = this.isUnityConnected;
+          this.isUnityConnected = false;
+
+          const errorMessage = error.message;
+
+          // If we just lost connection, try reconnecting with backoff
+          if (wasConnected) {
+            log(`[MCP Bridge] Connection lost during tool call '${name}' (attempt ${attempt}/${maxRetries}): ${errorMessage}`);
+          } else {
+            log(`[MCP Bridge] Tool call '${name}' failed (attempt ${attempt}/${maxRetries}): ${errorMessage}`);
+          }
+
+          if (attempt < maxRetries) {
+            log(`[MCP Bridge] Retrying in ${backoffMs}ms...`);
+            await new Promise(resolve => setTimeout(resolve, backoffMs));
+            continue;
+          }
+
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `Error: ${errorMessage}\n\nFailed after ${maxRetries} retry attempts. Please ensure Unity Editor is running.`,
+              },
+            ],
+            isError: true,
+          };
         }
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Error: ${errorMessage}`,
-            },
-          ],
-          isError: true,
-        };
       }
+
+      // Should not reach here, but return error as fallback
+      return this.getDisconnectedErrorMessage();
     });
   }
 

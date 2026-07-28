@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.0] - 2026-07-28
+
+### Added
+- package export/import API を tools/list に公開（export は GUID 入力対応）(#463)
+- DLL 構成を SOLID リファクタ後の4分割構成に更新
+  （Contracts / Paths / AssetStore アセンブリを追加同梱）
+
+### Changed
+- コア DLL を開発リポジトリ 2026-07 時点の最新（v0.10.12 系）に更新
+- MCP Bridge (Server~/mcp-bridge) を最新版に同期（マルチプロジェクト検出・ポート追従改善）
+
+### Fixed
+- ドメインリロード後にサーバーが再バインドされない問題を修正 (#467)
+- MCP 駆動中のモーダルダイアログによるハング / 空応答を根治 (#405)
+- Unity 非フォーカス時の PackageManager メインスレッド・デッドロックを修正 (#402)
+- Unity 非フォーカス時の Game ビューキャプチャ / Play 不具合を修正 (#385)
+- アセット名サニタイズを SearchQuery 型にし、角括弧を含む名前の不一致を解消 (#465)
+- UniTask 導入済みプロジェクトでの CS0246 コンパイルエラーを修正 (#474)
+- MCP サーバー接続安定性の改善 (#380)
+
 ## [1.0.7] - 2026-03-05
 
 ### Added
